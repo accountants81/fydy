@@ -21,6 +21,38 @@ const applyTheme = (t: AppTheme) => {
 
 const genId = () => `cust-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+// Older builds had a bug where a state setter was called as a side effect
+// from inside another setter's updater function; under React 18 StrictMode
+// that side effect ran twice, so some users already have real duplicate-id
+// records sitting in their saved localStorage data (same customer appearing
+// 2-3x with an identical id, in customers and/or trash). Filtering/deleting
+// by id then affects every duplicate at once, or a stray leftover duplicate
+// with an id that no longer matches anything visible refuses to go away.
+// This one-time cleanup on boot removes those duplicates so existing saved
+// data self-heals instead of requiring every affected user to manually wipe
+// their archive.
+const dedupeById = (arr: Customer[]): Customer[] => {
+  const seen = new Set<string>();
+  const result: Customer[] = [];
+  for (const c of arr) {
+    if (!c || typeof c.id !== "string" || seen.has(c.id)) continue;
+    seen.add(c.id);
+    result.push(c);
+  }
+  return result;
+};
+
+// Single canonical place to clean up a (customers, trash) pair: dedupe each
+// list by id, then drop any trash entry whose id already exists in
+// customers. Used both on boot load and when restoring a backup file, so a
+// corrupted/old backup can't reintroduce the same duplicate-id bug.
+const normalizeData = (customers: Customer[], trash: Customer[]): { customers: Customer[]; trash: Customer[] } => {
+  const cleanCustomers = dedupeById(customers);
+  const customerIds = new Set(cleanCustomers.map(c => c.id));
+  const cleanTrash = dedupeById(trash).filter(c => !customerIds.has(c.id));
+  return { customers: cleanCustomers, trash: cleanTrash };
+};
+
 // ─── App ────────────────────────────────────────────────────────────────────
 export default function App() {
   const [isAppLoading, setIsAppLoading] = useState(true);
@@ -60,22 +92,28 @@ export default function App() {
       setIsLoggedIn(savedLogin);
 
       const rawCustomers = localStorage.getItem("tax_customers");
+      let loadedCustomers: Customer[] = [];
       try {
         const parsed = rawCustomers ? JSON.parse(rawCustomers) : [];
-        setCustomers(Array.isArray(parsed) ? parsed : []);
+        loadedCustomers = Array.isArray(parsed) ? parsed : [];
       } catch {
         localStorage.removeItem("tax_customers");
-        setCustomers([]);
+        loadedCustomers = [];
       }
 
       const rawTrash = localStorage.getItem("tax_trash");
+      let loadedTrash: Customer[] = [];
       try {
         const parsed = rawTrash ? JSON.parse(rawTrash) : [];
-        setTrash(Array.isArray(parsed) ? parsed : []);
+        loadedTrash = Array.isArray(parsed) ? parsed : [];
       } catch {
         localStorage.removeItem("tax_trash");
-        setTrash([]);
+        loadedTrash = [];
       }
+
+      const normalized = normalizeData(loadedCustomers, loadedTrash);
+      setCustomers(normalized.customers);
+      setTrash(normalized.trash);
 
       const rawShowCounts = localStorage.getItem("tax_show_counts");
       setShowCountsInSidebar(rawShowCounts !== "false");
@@ -120,7 +158,10 @@ export default function App() {
     setCustomers(prev => {
       const maxSerial = prev.length > 0 ? Math.max(...prev.map(c => c.serial)) : 0;
       const now = new Date().toISOString();
-      const newC: Customer = { ...data, id: genId(), serial: maxSerial + 1, addedAt: now, lastEditedAt: now };
+      const existingIds = new Set(prev.map(c => c.id));
+      let id = genId();
+      while (existingIds.has(id)) id = genId(); // guard against the astronomically unlikely id collision
+      const newC: Customer = { ...data, id, serial: maxSerial + 1, addedAt: now, lastEditedAt: now };
       return [...prev, newC];
     });
   }, []);
@@ -171,8 +212,11 @@ export default function App() {
   }, []);
 
   const restoreBackup = useCallback((data: { customers: Customer[]; trash: Customer[] }) => {
-    setCustomers(data.customers);
-    setTrash(data.trash);
+    // Normalize here too: an old backup file exported while the historical
+    // duplicate-id bug was live could reintroduce the same corruption.
+    const normalized = normalizeData(data.customers, data.trash);
+    setCustomers(normalized.customers);
+    setTrash(normalized.trash);
   }, []);
 
   // ─── Quick search results ──────────────────────────────────────────────────
