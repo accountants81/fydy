@@ -1,0 +1,115 @@
+/* ── Local Cairo Font (offline-first) ─────────────────────────────────────── */
+@font-face {
+  font-family: 'Cairo';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/cairo-400.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Cairo';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/cairo-600.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Cairo';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/cairo-700.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Cairo';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('/fonts/cairo-800.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Cairo';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url('/fonts/cairo-900.ttf') format('truetype');
+}
+
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  direction: rtl;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Animations */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(20px) translateX(-50%); }
+  to   { opacity: 1; transform: translateY(0)   translateX(-50%); }
+}
+@keyframes slide-in-simple {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* No "forwards" fill-mode here on purpose: the "to" keyframe of each of these
+   animations already matches each element's normal (non-animated) resting
+   transform (translateY(0), or translateX(-50%) via the -translate-x-1/2
+   utility on the toast) — so dropping "forwards" is visually identical, but
+   crucially it means the element's computed `transform` reverts to `none`
+   once the animation ends. Keeping "forwards" left a permanent non-`none`
+   transform on nearly every view/modal container, which (a) creates a new
+   stacking context that traps nested `position: fixed` modals, making their
+   z-index compare only within that container instead of against the app
+   header — so the header visually painted over/under modals unpredictably —
+   and (b) makes that container the containing block for those fixed modals,
+   so they positioned themselves relative to the (scrolled) container instead
+   of the real viewport, appearing shifted down. */
+.animate-fade-in       { animation: fade-in 0.3s ease-out; }
+.animate-slide-in      { animation: slide-in 0.3s ease-out; }
+.animate-slide-in-simple { animation: slide-in-simple 0.25s ease-out; }
+
+/* PWA safe areas (iPhone notch / home indicator).
+   The fixed header's rendered height grows on notched devices because of the
+   extra top padding below. Without exposing that extra height back to the
+   page, the scrollable content (offset with a fixed "pt-16") ends up shorter
+   than the header, so content renders underneath / behind the header instead
+   of below it — this is the "header overlaps content" inconsistency. Track
+   the extra amount in a CSS variable and let layout consumers add it in. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+@supports (padding: env(safe-area-inset-top)) {
+  header { padding-top: max(12px, var(--safe-top)); }
+  main { padding-top: calc(4rem + max(0px, var(--safe-top) - 12px)) !important; }
+  .safe-bottom { padding-bottom: max(0px, env(safe-area-inset-bottom)); }
+}
+
+/* Mobile tap highlight */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* Prevent text size adjustment on mobile */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }

@@ -1,0 +1,3 @@
+- [Animation forwards fill-mode traps fixed modals](animation-forwards-stacking-trap.md) — `animation: ... forwards` on a container leaves a residual non-`none` transform, breaking z-index/positioning of nested `position:fixed` descendants.
+- [Guard localStorage persist effects during boot load](persist-effect-boot-race.md) — an unguarded persist-on-change effect fires with initial/default state before async hydration finishes, silently wiping saved data.
+- [Never call one setState from inside another's updater](strictmode-cross-setter-duplication.md) — StrictMode double-invokes updater functions, doubling any nested setState side effect (e.g. duplicate delete→trash entries).
