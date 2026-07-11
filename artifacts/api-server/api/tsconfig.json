@@ -2,7 +2,7 @@
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
-    "noEmit": true
+    "noEmitOnError": false
   },
   "include": ["./index.ts", "../src/**/*.ts"],
   "references": [

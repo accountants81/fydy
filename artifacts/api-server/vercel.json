@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm run typecheck",
   "rewrites": [
     { "source": "/(.*)", "destination": "/api" }
   ]
