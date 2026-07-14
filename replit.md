@@ -1,45 +1,75 @@
-# [Project name]
+# أرشيف الضرائب — Tax Archive
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A full-featured Arabic-language tax customer archive management app. All data is stored locally in the browser's `localStorage` — no backend database required for the frontend.
 
-## Run & Operate
+## Project Structure
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+This is a **pnpm monorepo** with two registered artifacts:
 
-## Stack
+| Artifact | Dir | Purpose |
+|---|---|---|
+| `أرشيف الضرائب` (web) | `artifacts/tax-archive` | React + Vite frontend — the main app |
+| `API Server` (api) | `artifacts/api-server` | Express + TypeScript backend (optional AI features) |
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+## Running Locally
 
-## Where things live
+```bash
+# Start everything
+pnpm install
+# Frontend only
+pnpm --filter @workspace/tax-archive run dev
+# API server only
+pnpm --filter @workspace/api-server run dev
+```
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+Both are managed by Replit workflows — see the configured workflows in the Replit UI.
 
-## Architecture decisions
+## Frontend App (artifacts/tax-archive)
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+**Stack:** React 18, TypeScript, Vite, Tailwind CSS (with custom Arabic RTL layout)
 
-## Product
+**Key views:**
+- `DashboardView` — stats overview, city breakdown, upcoming reminders, top customers by buildings
+- `CustomerManagementView` — CRUD for customers, bulk actions, CSV export, color filters, detail modal
+- `RemindersView` — tax deadlines & reminders with priority, due dates, done state
+- `RecycleBinView` — soft-deleted customers with restore/permanent-delete
+- `BackupView` — export/import full JSON backup (customers + trash + reminders)
+- `SettingsView` — password change, reset all data
+- `ChatbotView` — AI assistant (uses API server)
+- `LoginView` — password-protected login
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+**Data model** (`src/types.ts`):
+- `Customer` — fullName, mobile, nationalId, password, city, buildingsCount, gender, altNumbers, declarationLink, color, notes, serial, addedAt, lastEditedAt
+- `Reminder` — title, description, dueDate (YYYY-MM-DD), priority (high/medium/low), done, createdAt
 
-## User preferences
+**localStorage keys:**
+- `tax_customers` — Customer[]
+- `tax_trash` — Customer[] (soft-deleted)
+- `tax_reminders` — Reminder[]
+- `tax_admin_password` — string (default: `A12026`)
+- `tax_theme` — `"light"` | `"dark"`
+- `tax_is_logged_in` — `"true"` | `"false"`
+- `tax_show_counts` — `"true"` | `"false"`
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+**Important bug fixes baked in:**
+1. All `useEffect` persist hooks are guarded by `isAppLoading` to prevent wiping saved data on first mount.
+2. `deleteCustomer`/`restoreCustomer` use independent `setCustomers`/`setTrash` calls (not nested) to avoid StrictMode double-invocation duplicates.
+3. Animation classes in `index.css` do NOT use `forwards` fill-mode (would trap `position:fixed` modals in stacking contexts).
+4. `normalizeData` / `dedupeById` helpers self-heal pre-existing duplicate-id records on every boot.
 
-## Gotchas
+## API Server (artifacts/api-server)
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+**Stack:** Node.js, Express, TypeScript, pino logging
 
-## Pointers
+**Vercel deployment:**  
+- Set Root Directory = `artifacts/api-server` in Vercel dashboard  
+- Framework = Other  
+- The `vercel.json` sets buildCommand to `pnpm run typecheck` (avoids running the esbuild script meant for Replit only)  
+- `api/index.ts` exports the Express app as a serverless function entrypoint
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+## User Preferences
+
+- Default theme: dark
+- UI language: Arabic (RTL)
+- All user-facing text is Arabic
+- Preferred color scheme: violet/purple accent with slate neutrals

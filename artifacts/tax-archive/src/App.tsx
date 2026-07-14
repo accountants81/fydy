@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Menu, X, Sun, Moon, Search, Bot, LayoutDashboard, Users,
-  Trash2, Database, Settings, LogOut, Sparkles, ChevronLeft
+  Trash2, Database, Settings, LogOut, Sparkles, Bell
 } from "lucide-react";
-import { Customer, AppTheme, AppView } from "./types";
+import { Customer, Reminder, AppTheme, AppView } from "./types";
 import { initialCustomers } from "./data";
 import LoginView from "./components/LoginView";
 import DashboardView from "./components/DashboardView";
@@ -12,6 +12,7 @@ import RecycleBinView from "./components/RecycleBinView";
 import BackupView from "./components/BackupView";
 import SettingsView from "./components/SettingsView";
 import ChatbotView from "./components/ChatbotView";
+import RemindersView from "./components/RemindersView";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const applyTheme = (t: AppTheme) => {
@@ -20,6 +21,7 @@ const applyTheme = (t: AppTheme) => {
 };
 
 const genId = () => `cust-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const genRemId = () => `rem-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 // Older builds had a bug where a state setter was called as a side effect
 // from inside another setter's updater function; under React 18 StrictMode
@@ -55,11 +57,12 @@ const normalizeData = (customers: Customer[], trash: Customer[]): { customers: C
 
 // ─── App ────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [isAppLoading, setIsAppLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [trash, setTrash] = useState<Customer[]>([]);
-  const [fixedPassword, setFixedPassword] = useState("A12026");
+  const [isAppLoading, setIsAppLoading]     = useState(true);
+  const [isLoggedIn, setIsLoggedIn]         = useState(false);
+  const [customers, setCustomers]           = useState<Customer[]>([]);
+  const [trash, setTrash]                   = useState<Customer[]>([]);
+  const [reminders, setReminders]           = useState<Reminder[]>([]);
+  const [fixedPassword, setFixedPassword]   = useState("A12026");
   const [theme, setTheme] = useState<AppTheme>(() => {
     // Apply dark immediately to avoid flash — default to dark if no preference saved
     const saved = (localStorage.getItem("tax_theme") as AppTheme) || "dark";
@@ -67,15 +70,15 @@ export default function App() {
     else document.documentElement.classList.remove("dark");
     return saved;
   });
-  const [currentView, setCurrentView] = useState<AppView>("dashboard");
+  const [currentView, setCurrentView]       = useState<AppView>("dashboard");
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen]       = useState(false);
   const [showCountsInSidebar, setShowCountsInSidebar] = useState(true);
-  const [isQuickSearchOpen, setIsQuickSearchOpen] = useState(false);
-  const [quickSearchQuery, setQuickSearchQuery] = useState("");
-  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
+  const [isQuickSearchOpen, setIsQuickSearchOpen]     = useState(false);
+  const [quickSearchQuery, setQuickSearchQuery]       = useState("");
+  const [isAddEditModalOpen, setIsAddEditModalOpen]   = useState(false);
   const [selectedCustomerForEdit, setSelectedCustomerForEdit] = useState<Customer | null>(null);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm]     = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   // ─── Boot ──────────────────────────────────────────────────────────────────
@@ -115,6 +118,15 @@ export default function App() {
       setCustomers(normalized.customers);
       setTrash(normalized.trash);
 
+      const rawReminders = localStorage.getItem("tax_reminders");
+      try {
+        const parsed = rawReminders ? JSON.parse(rawReminders) : [];
+        setReminders(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        localStorage.removeItem("tax_reminders");
+        setReminders([]);
+      }
+
       const rawShowCounts = localStorage.getItem("tax_show_counts");
       setShowCountsInSidebar(rawShowCounts !== "false");
 
@@ -132,10 +144,16 @@ export default function App() {
     if (isAppLoading) return;
     localStorage.setItem("tax_customers", JSON.stringify(customers));
   }, [customers, isAppLoading]);
+
   useEffect(() => {
     if (isAppLoading) return;
     localStorage.setItem("tax_trash", JSON.stringify(trash));
   }, [trash, isAppLoading]);
+
+  useEffect(() => {
+    if (isAppLoading) return;
+    localStorage.setItem("tax_reminders", JSON.stringify(reminders));
+  }, [reminders, isAppLoading]);
 
   // ─── Theme ─────────────────────────────────────────────────────────────────
   const toggleTheme = useCallback(() => {
@@ -207,16 +225,32 @@ export default function App() {
   const resetAllData = useCallback(() => {
     setCustomers([]);
     setTrash([]);
+    setReminders([]);
     localStorage.removeItem("tax_customers");
     localStorage.removeItem("tax_trash");
+    localStorage.removeItem("tax_reminders");
   }, []);
 
-  const restoreBackup = useCallback((data: { customers: Customer[]; trash: Customer[] }) => {
+  const restoreBackup = useCallback((data: { customers: Customer[]; trash: Customer[]; reminders?: Reminder[] }) => {
     // Normalize here too: an old backup file exported while the historical
     // duplicate-id bug was live could reintroduce the same corruption.
     const normalized = normalizeData(data.customers, data.trash);
     setCustomers(normalized.customers);
     setTrash(normalized.trash);
+    if (data.reminders && Array.isArray(data.reminders)) setReminders(data.reminders);
+  }, []);
+
+  // ─── Reminders CRUD ────────────────────────────────────────────────────────
+  const addReminder = useCallback((data: Omit<Reminder, "id" | "createdAt">) => {
+    setReminders(prev => [...prev, { ...data, id: genRemId(), createdAt: new Date().toISOString() }]);
+  }, []);
+
+  const updateReminder = useCallback((id: string, updates: Partial<Reminder>) => {
+    setReminders(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  }, []);
+
+  const deleteReminder = useCallback((id: string) => {
+    setReminders(prev => prev.filter(r => r.id !== id));
   }, []);
 
   // ─── Quick search results ──────────────────────────────────────────────────
@@ -224,8 +258,14 @@ export default function App() {
     quickSearchQuery.trim() &&
     (c.fullName.toLowerCase().includes(quickSearchQuery.toLowerCase()) ||
      c.mobile.includes(quickSearchQuery) ||
+     c.nationalId.includes(quickSearchQuery) ||
      (c.city || "").toLowerCase().includes(quickSearchQuery.toLowerCase()))
   ).slice(0, 8);
+
+  // ─── Overdue reminders count (for badge) ──────────────────────────────────
+  const today = new Date().toISOString().split("T")[0];
+  const overdueCount = reminders.filter(r => !r.done && r.dueDate < today).length;
+  const pendingRemCount = reminders.filter(r => !r.done).length;
 
   // ─── Loading Screen ────────────────────────────────────────────────────────
   if (isAppLoading) {
@@ -265,26 +305,28 @@ export default function App() {
 
   // ─── Sidebar nav items ────────────────────────────────────────────────────
   const navItems = [
-    { id: "dashboard" as AppView, label: "لوحة التحكم", icon: <LayoutDashboard size={18} />, count: null },
-    { id: "customers" as AppView, label: "إدارة العملاء", icon: <Users size={18} />, count: customers.length },
-    { id: "trash" as AppView, label: "سلة المهملات", icon: <Trash2 size={18} />, count: trash.length },
-    { id: "backup" as AppView, label: "النسخ الاحتياطي", icon: <Database size={18} />, count: null },
-    { id: "settings" as AppView, label: "الإعدادات", icon: <Settings size={18} />, count: null },
-    { id: "chatbot" as AppView, label: "الذكاء الاصطناعي", icon: <Bot size={18} />, count: null },
+    { id: "dashboard"  as AppView, label: "لوحة التحكم",     icon: <LayoutDashboard size={18}/>, count: null },
+    { id: "customers"  as AppView, label: "إدارة العملاء",   icon: <Users size={18}/>,           count: customers.length },
+    { id: "reminders"  as AppView, label: "التذكيرات",       icon: <Bell size={18}/>,            count: pendingRemCount },
+    { id: "trash"      as AppView, label: "سلة المهملات",    icon: <Trash2 size={18}/>,          count: trash.length },
+    { id: "backup"     as AppView, label: "النسخ الاحتياطي", icon: <Database size={18}/>,        count: null },
+    { id: "settings"   as AppView, label: "الإعدادات",       icon: <Settings size={18}/>,        count: null },
+    { id: "chatbot"    as AppView, label: "الذكاء الاصطناعي",icon: <Bot size={18}/>,             count: null },
   ];
 
   const viewTitles: Record<AppView, string> = {
-    dashboard: "لوحة التحكم",
-    customers: "إدارة العملاء",
-    trash: "سلة المهملات",
-    backup: "النسخ الاحتياطي",
-    settings: "الإعدادات",
-    chatbot: "المساعد الذكي",
+    dashboard:  "لوحة التحكم",
+    customers:  "إدارة العملاء",
+    reminders:  "التذكيرات والمواعيد",
+    trash:      "سلة المهملات",
+    backup:     "النسخ الاحتياطي",
+    settings:   "الإعدادات",
+    chatbot:    "المساعد الذكي",
   };
 
-  const bgClass = theme === "dark" ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-900";
+  const bgClass      = theme === "dark" ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-900";
   const sidebarClass = theme === "dark" ? "bg-slate-950 border-slate-800" : "bg-white border-slate-200";
-  const topbarClass = theme === "dark" ? "bg-slate-950/90 border-slate-800" : "bg-white/90 border-slate-200";
+  const topbarClass  = theme === "dark" ? "bg-slate-950/90 border-slate-800" : "bg-white/90 border-slate-200";
   const btnGhostClass = theme === "dark"
     ? "border-slate-800 hover:bg-slate-800 text-slate-300"
     : "border-slate-200 hover:bg-slate-100 text-slate-600";
@@ -294,10 +336,7 @@ export default function App() {
 
       {/* ── Sidebar Overlay (mobile) ──────────────────────────────────────── */}
       {isSidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm lg:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
@@ -308,19 +347,16 @@ export default function App() {
         <div className={`flex items-center justify-between p-5 border-b ${theme === "dark" ? "border-slate-800" : "border-slate-100"}`}>
           <div className="flex items-center gap-3">
             <img
-              src="/logo.jpg"
-              alt="logo"
+              src="/logo.jpg" alt="logo"
               className="w-10 h-10 rounded-2xl border-2 border-violet-500 object-cover"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
             <div>
               <h1 className={`text-base font-extrabold leading-none ${theme === "dark" ? "text-white" : "text-slate-900"}`}>أرشيف الضرائب</h1>
-              <p className="text-xs text-violet-500 font-semibold flex items-center gap-1 mt-0.5"><Sparkles size={10} />Tax Archive</p>
+              <p className="text-xs text-violet-500 font-semibold flex items-center gap-1 mt-0.5"><Sparkles size={10}/>Tax Archive</p>
             </div>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className={`p-2 rounded-xl cursor-pointer lg:hidden ${btnGhostClass} border`}>
-            <X size={18} />
-          </button>
+          <button onClick={() => setIsSidebarOpen(false)} className={`p-2 rounded-xl cursor-pointer lg:hidden ${btnGhostClass} border`}><X size={18}/></button>
         </div>
 
         {/* Nav */}
@@ -345,7 +381,9 @@ export default function App() {
                 <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
                   currentView === item.id
                     ? "bg-white/20 text-white"
-                    : theme === "dark" ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"
+                    : item.id === "reminders" && overdueCount > 0
+                      ? "bg-red-500 text-white"
+                      : theme === "dark" ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"
                 }`}>{item.count}</span>
               )}
             </button>
@@ -360,7 +398,7 @@ export default function App() {
               theme === "dark" ? "hover:bg-red-950/30" : "hover:bg-red-50"
             }`}
           >
-            <LogOut size={18} />
+            <LogOut size={18}/>
             تسجيل الخروج
           </button>
         </div>
@@ -369,7 +407,7 @@ export default function App() {
       {/* ── Top Bar ───────────────────────────────────────────────────────── */}
       <header className={`fixed top-0 left-0 right-0 lg:right-72 z-20 border-b backdrop-blur-md flex items-center gap-3 px-4 py-3 ${topbarClass}`}>
         <button onClick={() => setIsSidebarOpen(true)} className={`p-2.5 rounded-xl border cursor-pointer transition-all lg:hidden ${btnGhostClass}`}>
-          <Menu size={18} />
+          <Menu size={18}/>
         </button>
 
         <h2 className={`text-base font-extrabold flex-1 ${theme === "dark" ? "text-white" : "text-slate-900"}`}>
@@ -377,13 +415,27 @@ export default function App() {
         </h2>
 
         <div className="flex items-center gap-2">
-          {/* Search */}
+          {/* Reminders bell with badge */}
+          <button
+            onClick={() => setCurrentView("reminders")}
+            className={`relative p-2.5 rounded-xl border cursor-pointer transition-all ${
+              currentView === "reminders" ? "bg-violet-600 border-violet-600 text-white" : btnGhostClass
+            }`}
+            title="التذكيرات"
+          >
+            <Bell size={18}/>
+            {overdueCount > 0 && (
+              <span className="absolute -top-1 -left-1 bg-red-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center leading-none">{overdueCount}</span>
+            )}
+          </button>
+
+          {/* Quick search */}
           <button
             onClick={() => { setIsQuickSearchOpen(true); setQuickSearchQuery(""); }}
             className={`p-2.5 rounded-xl border cursor-pointer transition-all ${btnGhostClass}`}
             title="بحث سريع"
           >
-            <Search size={18} />
+            <Search size={18}/>
           </button>
 
           {/* AI */}
@@ -394,27 +446,23 @@ export default function App() {
             }`}
             title="المساعد الذكي"
           >
-            <Bot size={18} />
+            <Bot size={18}/>
           </button>
 
           {/* Theme */}
           <button onClick={toggleTheme} className={`p-2.5 rounded-xl border cursor-pointer transition-all ${btnGhostClass}`} title="تبديل الثيم">
-            {theme === "dark" ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
+            {theme === "dark" ? <Sun size={18} className="text-amber-400"/> : <Moon size={18}/>}
           </button>
         </div>
       </header>
 
       {/* ── Main Content ──────────────────────────────────────────────────── */}
       <main className="lg:mr-72 pt-16">
-        {/* Chatbot gets its own full-height wrapper so it never hides behind the header */}
         {currentView === "chatbot" ? (
           <div className="h-[calc(100dvh-4rem)] p-3 md:p-4 flex flex-col">
             <ChatbotView
-              customers={customers}
-              trash={trash}
-              onAddCustomer={addCustomer}
-              onUpdateCustomer={updateCustomer}
-              onDeleteCustomer={deleteCustomer}
+              customers={customers} trash={trash}
+              onAddCustomer={addCustomer} onUpdateCustomer={updateCustomer} onDeleteCustomer={deleteCustomer}
               theme={theme}
             />
           </div>
@@ -422,7 +470,7 @@ export default function App() {
           <div className="p-4 md:p-6 max-w-6xl mx-auto">
             {currentView === "dashboard" && (
               <DashboardView
-                customers={customers}
+                customers={customers} reminders={reminders}
                 setView={setCurrentView}
                 setSelectedCustomerForEdit={setSelectedCustomerForEdit}
                 setIsAddEditModalOpen={setIsAddEditModalOpen}
@@ -432,42 +480,38 @@ export default function App() {
             {currentView === "customers" && (
               <CustomerManagementView
                 customers={customers}
-                onAddCustomer={addCustomer}
-                onUpdateCustomer={updateCustomer}
-                onDeleteCustomer={deleteCustomer}
+                onAddCustomer={addCustomer} onUpdateCustomer={updateCustomer} onDeleteCustomer={deleteCustomer}
                 theme={theme}
-                isAddEditModalOpen={isAddEditModalOpen}
-                setIsAddEditModalOpen={setIsAddEditModalOpen}
-                selectedCustomerForEdit={selectedCustomerForEdit}
-                setSelectedCustomerForEdit={setSelectedCustomerForEdit}
+                isAddEditModalOpen={isAddEditModalOpen} setIsAddEditModalOpen={setIsAddEditModalOpen}
+                selectedCustomerForEdit={selectedCustomerForEdit} setSelectedCustomerForEdit={setSelectedCustomerForEdit}
                 triggerToast={triggerToast}
+              />
+            )}
+            {currentView === "reminders" && (
+              <RemindersView
+                reminders={reminders}
+                onAddReminder={addReminder} onUpdateReminder={updateReminder} onDeleteReminder={deleteReminder}
+                theme={theme} triggerToast={triggerToast}
               />
             )}
             {currentView === "trash" && (
               <RecycleBinView
-                trash={trash}
-                onRestoreCustomer={restoreCustomer}
-                onPermanentDelete={permanentDelete}
-                onClearTrash={clearTrash}
-                theme={theme}
-                triggerToast={triggerToast}
+                trash={trash} onRestoreCustomer={restoreCustomer}
+                onPermanentDelete={permanentDelete} onClearTrash={clearTrash}
+                theme={theme} triggerToast={triggerToast}
               />
             )}
             {currentView === "backup" && (
               <BackupView
-                customers={customers}
-                trash={trash}
+                customers={customers} trash={trash} reminders={reminders}
                 onRestoreBackup={restoreBackup}
-                theme={theme}
-                triggerToast={triggerToast}
+                theme={theme} triggerToast={triggerToast}
               />
             )}
             {currentView === "settings" && (
               <SettingsView
-                theme={theme}
-                fixedPassword={fixedPassword}
-                onChangePassword={changePassword}
-                onResetAllData={resetAllData}
+                theme={theme} fixedPassword={fixedPassword}
+                onChangePassword={changePassword} onResetAllData={resetAllData}
                 showCountsInSidebar={showCountsInSidebar}
                 onToggleShowCounts={() => {
                   const next = !showCountsInSidebar;
@@ -486,16 +530,15 @@ export default function App() {
         <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-20 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
           <div className={`w-full max-w-xl rounded-3xl border shadow-2xl overflow-hidden ${theme === "dark" ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200"}`}>
             <div className="flex items-center gap-3 p-4 border-b border-slate-100 dark:border-slate-800">
-              <Search size={18} className="text-slate-400 shrink-0" />
+              <Search size={18} className="text-slate-400 shrink-0"/>
               <input
                 autoFocus
-                type="text"
-                value={quickSearchQuery}
+                type="text" value={quickSearchQuery}
                 onChange={e => setQuickSearchQuery(e.target.value)}
-                placeholder="ابحث عن عميل بالاسم أو الرقم أو المدينة..."
+                placeholder="ابحث عن عميل بالاسم، الموبايل، الرقم القومي أو المدينة..."
                 className={`flex-1 text-sm focus:outline-none text-right bg-transparent ${theme === "dark" ? "text-white placeholder-slate-500" : "text-slate-900 placeholder-slate-400"}`}
               />
-              <button onClick={() => setIsQuickSearchOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16} /></button>
+              <button onClick={() => setIsQuickSearchOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"><X size={16}/></button>
             </div>
             <div className="max-h-80 overflow-y-auto">
               {quickSearchQuery.trim() === "" && (
@@ -524,6 +567,7 @@ export default function App() {
                     <p className={`font-bold text-sm truncate ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{c.fullName}</p>
                     <p className={`text-xs font-mono ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>{c.mobile} · {c.city || "—"}</p>
                   </div>
+                  {c.color && <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${{ green:"bg-emerald-500", blue:"bg-blue-500", red:"bg-red-500", yellow:"bg-amber-500", gray:"bg-slate-400" }[c.color]}`}/>}
                 </button>
               ))}
             </div>
@@ -549,7 +593,7 @@ export default function App() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-fade-in text-right">
           <div className={`w-full max-w-sm p-6 rounded-3xl border shadow-2xl ${theme === "dark" ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-100 text-slate-900"}`}>
             <div className="flex flex-col items-center text-center space-y-4">
-              <div className="p-4 bg-amber-500/10 text-amber-500 rounded-2xl"><LogOut size={32} /></div>
+              <div className="p-4 bg-amber-500/10 text-amber-500 rounded-2xl"><LogOut size={32}/></div>
               <h3 className="text-xl font-extrabold">تسجيل الخروج</h3>
               <p className={`text-sm ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>هل أنت متأكد من تسجيل الخروج؟</p>
             </div>
@@ -557,12 +601,11 @@ export default function App() {
               <button
                 onClick={() => { setIsLoggedIn(false); localStorage.setItem("tax_is_logged_in", "false"); setShowLogoutConfirm(false); }}
                 className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-sm cursor-pointer"
-              >
-                نعم، خروج
-              </button>
-              <button onClick={() => setShowLogoutConfirm(false)} className={`flex-1 py-3 rounded-xl border font-bold text-sm cursor-pointer ${theme === "dark" ? "border-slate-800 bg-slate-950 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
-                إلغاء
-              </button>
+              >نعم، خروج</button>
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className={`flex-1 py-3 rounded-xl border font-bold text-sm cursor-pointer ${theme === "dark" ? "border-slate-800 bg-slate-950 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+              >إلغاء</button>
             </div>
           </div>
         </div>

@@ -1,27 +1,29 @@
 import React, { useState, useRef } from "react";
-import { Download, Upload, AlertTriangle, CheckCircle2, Database, FileText } from "lucide-react";
-import { Customer, AppTheme } from "../types";
+import { Download, Upload, AlertTriangle, CheckCircle2, Database, FileText, Bell } from "lucide-react";
+import { Customer, Reminder, AppTheme } from "../types";
 
 interface BackupViewProps {
   customers: Customer[];
   trash: Customer[];
-  onRestoreBackup: (data: { customers: Customer[]; trash: Customer[] }) => void;
+  reminders?: Reminder[];
+  onRestoreBackup: (data: { customers: Customer[]; trash: Customer[]; reminders?: Reminder[] }) => void;
   theme: AppTheme;
   triggerToast: (message: string, type?: "success" | "error") => void;
 }
 
-export default function BackupView({ customers, trash, onRestoreBackup, theme, triggerToast }: BackupViewProps) {
+export default function BackupView({ customers, trash, reminders = [], onRestoreBackup, theme, triggerToast }: BackupViewProps) {
   const [restoreConfirm, setRestoreConfirm] = useState(false);
-  const [pendingData, setPendingData] = useState<{ customers: Customer[]; trash: Customer[] } | null>(null);
+  const [pendingData, setPendingData] = useState<{ customers: Customer[]; trash: Customer[]; reminders?: Reminder[] } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = () => {
     const data = {
-      version: "1.0",
+      version: "2.0",
       exportedAt: new Date().toISOString(),
       customers,
       trash,
+      reminders,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -64,7 +66,10 @@ export default function BackupView({ customers, trash, onRestoreBackup, theme, t
         if (validCustomers.length !== parsed.customers.length) {
           triggerToast(`تم تصفية ${parsed.customers.length - validCustomers.length} سجل تالف من الملف.`, "error");
         }
-        setPendingData({ customers: validCustomers, trash: validTrash });
+        const validReminders = Array.isArray(parsed.reminders)
+          ? parsed.reminders.filter((r: any) => r && typeof r.id === "string" && typeof r.title === "string")
+          : [];
+        setPendingData({ customers: validCustomers, trash: validTrash, reminders: validReminders });
         setRestoreConfirm(true);
       } catch {
         triggerToast("فشل قراءة الملف. تأكد أنه ملف JSON صالح.", "error");
@@ -104,7 +109,7 @@ export default function BackupView({ customers, trash, onRestoreBackup, theme, t
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className={`p-4 rounded-2xl border flex items-center gap-4 ${theme === "dark" ? "bg-slate-900/40 border-slate-800" : "bg-white border-slate-100 shadow-sm"}`}>
           <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600">
             <Database size={20} />
@@ -123,6 +128,15 @@ export default function BackupView({ customers, trash, onRestoreBackup, theme, t
             <p className={`text-2xl font-black ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{trash.length}</p>
           </div>
         </div>
+        <div className={`p-4 rounded-2xl border flex items-center gap-4 ${theme === "dark" ? "bg-slate-900/40 border-slate-800" : "bg-white border-slate-100 shadow-sm"}`}>
+          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-600">
+            <Bell size={20} />
+          </div>
+          <div>
+            <p className={`text-xs font-semibold ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>التذكيرات</p>
+            <p className={`text-2xl font-black ${theme === "dark" ? "text-white" : "text-slate-900"}`}>{reminders.length}</p>
+          </div>
+        </div>
       </div>
 
       {/* Export */}
@@ -134,7 +148,7 @@ export default function BackupView({ customers, trash, onRestoreBackup, theme, t
           <div>
             <h3 className={`text-lg font-extrabold ${theme === "dark" ? "text-white" : "text-slate-900"}`}>تحميل نسخة احتياطية</h3>
             <p className={`text-sm mt-1 ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
-              تصدير جميع بيانات التطبيق (العملاء + سلة المهملات) إلى ملف JSON
+              تصدير جميع بيانات التطبيق (العملاء + سلة المهملات + التذكيرات) إلى ملف JSON
             </p>
           </div>
         </div>

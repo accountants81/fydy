@@ -17,9 +17,19 @@ export interface Customer {
   lastEditedAt: string;
 }
 
+export interface Reminder {
+  id: string;
+  title: string;
+  description?: string;
+  dueDate: string;        // ISO date string YYYY-MM-DD
+  priority: 'high' | 'medium' | 'low';
+  done: boolean;
+  createdAt: string;
+}
+
 export type AppTheme = 'light' | 'dark';
 
-export type AppView = 'dashboard' | 'customers' | 'trash' | 'backup' | 'settings' | 'chatbot';
+export type AppView = 'dashboard' | 'customers' | 'trash' | 'backup' | 'settings' | 'chatbot' | 'reminders';
 
 export interface ChatMsg {
   id: string;
