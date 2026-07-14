@@ -56,104 +56,77 @@ const normalizeData = (customers: Customer[], trash: Customer[]): { customers: C
 };
 
 // ─── App ────────────────────────────────────────────────────────────────────
+// ─── Synchronous localStorage boot reader ─────────────────────────────────
+// All state is initialised synchronously from localStorage so the app
+// renders correctly on the very first paint — no artificial delay, no
+// loading spinner that re-appears on every HMR update or component remount.
+function readBootState() {
+  const theme = (localStorage.getItem("tax_theme") as AppTheme) || "dark";
+  applyTheme(theme);
+
+  const isLoggedIn = localStorage.getItem("tax_is_logged_in") === "true";
+  const fixedPassword = localStorage.getItem("tax_admin_password") || "A12026";
+  const showCounts = localStorage.getItem("tax_show_counts") !== "false";
+
+  let customers: Customer[] = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem("tax_customers") || "[]");
+    customers = Array.isArray(parsed) ? parsed : [];
+  } catch { localStorage.removeItem("tax_customers"); }
+
+  let trash: Customer[] = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem("tax_trash") || "[]");
+    trash = Array.isArray(parsed) ? parsed : [];
+  } catch { localStorage.removeItem("tax_trash"); }
+
+  const normalized = normalizeData(customers, trash);
+
+  let reminders: Reminder[] = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem("tax_reminders") || "[]");
+    reminders = Array.isArray(parsed) ? parsed : [];
+  } catch { localStorage.removeItem("tax_reminders"); }
+
+  return { theme, isLoggedIn, fixedPassword, showCounts, ...normalized, reminders };
+}
+
 export default function App() {
-  const [isAppLoading, setIsAppLoading]     = useState(true);
-  const [isLoggedIn, setIsLoggedIn]         = useState(false);
-  const [customers, setCustomers]           = useState<Customer[]>([]);
-  const [trash, setTrash]                   = useState<Customer[]>([]);
-  const [reminders, setReminders]           = useState<Reminder[]>([]);
-  const [fixedPassword, setFixedPassword]   = useState("A12026");
-  const [theme, setTheme] = useState<AppTheme>(() => {
-    // Apply dark immediately to avoid flash — default to dark if no preference saved
-    const saved = (localStorage.getItem("tax_theme") as AppTheme) || "dark";
-    if (saved === "dark") document.documentElement.classList.add("dark");
-    else document.documentElement.classList.remove("dark");
-    return saved;
-  });
+  // Read everything synchronously on first render — no delayed effect, no flash
+  const [boot] = useState(readBootState);
+
+  const [isLoggedIn, setIsLoggedIn]         = useState(boot.isLoggedIn);
+  const [customers, setCustomers]           = useState<Customer[]>(boot.customers);
+  const [trash, setTrash]                   = useState<Customer[]>(boot.trash);
+  const [reminders, setReminders]           = useState<Reminder[]>(boot.reminders);
+  const [fixedPassword, setFixedPassword]   = useState(boot.fixedPassword);
+  const [theme, setTheme]                   = useState<AppTheme>(boot.theme);
+  const [showCountsInSidebar, setShowCountsInSidebar] = useState(boot.showCounts);
   const [currentView, setCurrentView]       = useState<AppView>("dashboard");
 
-  const [isSidebarOpen, setIsSidebarOpen]       = useState(false);
-  const [showCountsInSidebar, setShowCountsInSidebar] = useState(true);
-  const [isQuickSearchOpen, setIsQuickSearchOpen]     = useState(false);
-  const [quickSearchQuery, setQuickSearchQuery]       = useState("");
+  const [isSidebarOpen, setIsSidebarOpen]         = useState(false);
+  const [isQuickSearchOpen, setIsQuickSearchOpen] = useState(false);
+  const [quickSearchQuery, setQuickSearchQuery]   = useState("");
   const [isAddEditModalOpen, setIsAddEditModalOpen]   = useState(false);
   const [selectedCustomerForEdit, setSelectedCustomerForEdit] = useState<Customer | null>(null);
-  const [showLogoutConfirm, setShowLogoutConfirm]     = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  // ─── Boot ──────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const savedTheme = (localStorage.getItem("tax_theme") as AppTheme) || "dark";
-      setTheme(savedTheme);
-      applyTheme(savedTheme);
-
-      const savedPassword = localStorage.getItem("tax_admin_password") || "A12026";
-      setFixedPassword(savedPassword);
-
-      const savedLogin = localStorage.getItem("tax_is_logged_in") === "true";
-      setIsLoggedIn(savedLogin);
-
-      const rawCustomers = localStorage.getItem("tax_customers");
-      let loadedCustomers: Customer[] = [];
-      try {
-        const parsed = rawCustomers ? JSON.parse(rawCustomers) : [];
-        loadedCustomers = Array.isArray(parsed) ? parsed : [];
-      } catch {
-        localStorage.removeItem("tax_customers");
-        loadedCustomers = [];
-      }
-
-      const rawTrash = localStorage.getItem("tax_trash");
-      let loadedTrash: Customer[] = [];
-      try {
-        const parsed = rawTrash ? JSON.parse(rawTrash) : [];
-        loadedTrash = Array.isArray(parsed) ? parsed : [];
-      } catch {
-        localStorage.removeItem("tax_trash");
-        loadedTrash = [];
-      }
-
-      const normalized = normalizeData(loadedCustomers, loadedTrash);
-      setCustomers(normalized.customers);
-      setTrash(normalized.trash);
-
-      const rawReminders = localStorage.getItem("tax_reminders");
-      try {
-        const parsed = rawReminders ? JSON.parse(rawReminders) : [];
-        setReminders(Array.isArray(parsed) ? parsed : []);
-      } catch {
-        localStorage.removeItem("tax_reminders");
-        setReminders([]);
-      }
-
-      const rawShowCounts = localStorage.getItem("tax_show_counts");
-      setShowCountsInSidebar(rawShowCounts !== "false");
-
-      setIsAppLoading(false);
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, []);
-
   // ─── Persist ───────────────────────────────────────────────────────────────
-  // Guarded by isAppLoading: without this, these effects fire on first mount
-  // with the initial empty state (before the boot effect has a chance to read
-  // the saved data back from localStorage), silently overwriting real saved
-  // customers/trash with "[]" on every page load/refresh.
+  // State is initialised synchronously from localStorage (see readBootState),
+  // so on first render the values are already correct — these effects safely
+  // write back only when the values actually change after mount.
   useEffect(() => {
-    if (isAppLoading) return;
     localStorage.setItem("tax_customers", JSON.stringify(customers));
-  }, [customers, isAppLoading]);
+  }, [customers]);
 
   useEffect(() => {
-    if (isAppLoading) return;
     localStorage.setItem("tax_trash", JSON.stringify(trash));
-  }, [trash, isAppLoading]);
+  }, [trash]);
 
   useEffect(() => {
-    if (isAppLoading) return;
     localStorage.setItem("tax_reminders", JSON.stringify(reminders));
-  }, [reminders, isAppLoading]);
+  }, [reminders]);
 
   // ─── Theme ─────────────────────────────────────────────────────────────────
   const toggleTheme = useCallback(() => {
@@ -266,30 +239,6 @@ export default function App() {
   const today = new Date().toISOString().split("T")[0];
   const overdueCount = reminders.filter(r => !r.done && r.dueDate < today).length;
   const pendingRemCount = reminders.filter(r => !r.done).length;
-
-  // ─── Loading Screen ────────────────────────────────────────────────────────
-  if (isAppLoading) {
-    return (
-      <div className={`min-h-screen flex flex-col items-center justify-center gap-6 ${
-        theme === "dark" ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-900"
-      }`}>
-        <div className="relative">
-          <div className="absolute inset-0 bg-violet-500/20 blur-3xl rounded-full scale-150"></div>
-          <img
-            src="/logo.jpg"
-            alt="logo"
-            className="w-20 h-20 rounded-3xl border-2 border-violet-500 object-cover shadow-2xl relative z-10"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        </div>
-        <div className="text-center">
-          <h1 className="text-2xl font-extrabold">أرشيف الضرائب</h1>
-          <p className={`text-sm mt-1 ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>جاري التحميل...</p>
-        </div>
-        <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin"></div>
-      </div>
-    );
-  }
 
   // ─── Login ─────────────────────────────────────────────────────────────────
   if (!isLoggedIn) {
